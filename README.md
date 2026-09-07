@@ -2,7 +2,7 @@
 
 Agente de desktop (Electron) que fica na bandeja do sistema e abre, com um atalho
 global configurável, uma busca ultrarrápida (fuzzy, algoritmo [Bitap](https://en.wikipedia.org/wiki/Bitap_algorithm))
-sobre seus favoritos, links encurtados e QR Codes salvos no [PRISMA](https://github.com/pageup-sistemas/prisma).
+sobre seus favoritos, links encurtados e QR Codes salvos no [PRISMA](https://github.com/pgup-sistemas/prisma).
 
 Inspirado em launchers como [Raycast](https://raycast.com), [Alfred](https://alfredapp.com)
 e principalmente o [ueli](https://github.com/oliverschwendener/ueli) (open source,

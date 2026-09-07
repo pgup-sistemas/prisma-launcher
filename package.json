@@ -8,9 +8,9 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/pageup-sistemas/prisma-launcher.git"
+    "url": "https://github.com/pgup-sistemas/prisma-launcher.git"
   },
-  "homepage": "https://github.com/pageup-sistemas/prisma-launcher",
+  "homepage": "https://github.com/pgup-sistemas/prisma-launcher",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
