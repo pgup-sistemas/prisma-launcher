@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Configurações — PRISMA Launcher</title>
+<style>
+    :root {
+        --color-base: #0D1B2A;
+        --color-surface: #152233;
+        --color-elevated: #1A2E44;
+        --color-border: #1E3A5F;
+        --color-text-primary: #E8F4F8;
+        --color-text-secondary: #94A3B8;
+        --color-text-muted: #4E6B87;
+        --color-accent: #2E86AB;
+        --color-success: #22C55E;
+        --color-danger: #EF4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        background: var(--color-base);
+        color: var(--color-text-primary);
+        font-family: -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+        padding: 24px;
+    }
+    h1 {
+        font-size: 1.2rem;
+        margin: 0 0 4px;
+    }
+    p.sub {
+        color: var(--color-text-secondary);
+        font-size: .85rem;
+        margin: 0 0 20px;
+    }
+    label {
+        display: block;
+        font-size: .8rem;
+        color: var(--color-text-secondary);
+        margin-bottom: 4px;
+    }
+    .field {
+        margin-bottom: 14px;
+    }
+    input[type="text"], input[type="password"] {
+        width: 100%;
+        background: var(--color-elevated);
+        border: 1px solid var(--color-border);
+        border-radius: 6px;
+        color: var(--color-text-primary);
+        padding: 8px 10px;
+        font-size: .9rem;
+    }
+    input:focus {
+        outline: none;
+        border-color: var(--color-accent);
+    }
+    .shortcut-input {
+        cursor: pointer;
+        text-align: center;
+        font-weight: 600;
+        letter-spacing: .5px;
+    }
+    .shortcut-input.listening {
+        border-color: var(--color-accent);
+        background: rgba(46, 134, 171, .15);
+    }
+    small.hint {
+        display: block;
+        color: var(--color-text-muted);
+        font-size: .72rem;
+        margin-top: 4px;
+    }
+    .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 18px;
+    }
+    .checkbox-row label { margin: 0; }
+    button {
+        border: none;
+        border-radius: 6px;
+        padding: 9px 16px;
+        font-size: .85rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    .btn-primary {
+        background: linear-gradient(135deg, #2E86AB 0%, #1A5276 100%);
+        color: #fff;
+        width: 100%;
+    }
+    .btn-link {
+        background: none;
+        color: var(--color-text-muted);
+        font-weight: 400;
+        padding: 4px 0;
+    }
+    #feedback {
+        font-size: .8rem;
+        margin-top: 10px;
+        min-height: 18px;
+    }
+    #feedback.ok { color: var(--color-success); }
+    #feedback.error { color: var(--color-danger); }
+</style>
+</head>
+<body>
+    <h1>PRISMA Launcher</h1>
+    <p class="sub">Conecte com sua conta PRISMA e escolha o atalho global de busca.</p>
+
+    <div class="field">
+        <label>URL do servidor PRISMA</label>
+        <input type="text" id="serverUrl" placeholder="http://localhost/prisma">
+        <small class="hint">O endereço onde o PRISMA está rodando (sem barra no final).</small>
+    </div>
+
+    <div class="field">
+        <label>UUID do usuário</label>
+        <input type="text" id="uid" placeholder="ex: 38d66f1f-5199-4fe1-a5a6-77fa2a4d2dba">
+    </div>
+
+    <div class="field">
+        <label>Chave de API</label>
+        <input type="text" id="apiKey" placeholder="sua api_key">
+        <small class="hint">UUID e chave de API ficam na página Perfil → Widget Launcher, dentro do PRISMA.</small>
+    </div>
+
+    <div class="field">
+        <label>Atalho global</label>
+        <input type="text" id="shortcut" class="shortcut-input" readonly value="Ctrl+Alt+K">
+        <small class="hint">Clique no campo acima e pressione a combinação de teclas desejada.</small>
+    </div>
+
+    <div class="checkbox-row">
+        <input type="checkbox" id="launchAtStartup" checked>
+        <label for="launchAtStartup">Iniciar com o sistema</label>
+    </div>
+
+    <div class="checkbox-row" style="align-items:flex-start;">
+        <input type="checkbox" id="syncBookmarks" style="margin-top:2px;">
+        <div>
+            <label for="syncBookmarks" style="margin:0;">Sincronizar favoritos do navegador automaticamente</label>
+            <small class="hint" style="margin-top:2px;">
+                Lê o arquivo local de favoritos do Chrome/Edge/Brave e envia só os novos pra sua conta PRISMA
+                (verifica a cada 30s). Nada é enviado sem sua autorização aqui.
+            </small>
+        </div>
+    </div>
+
+    <button class="btn-primary" id="saveBtn">Salvar</button>
+    <div id="feedback"></div>
+
+    <script src="settings.js"></script>
+</body>
+</html>

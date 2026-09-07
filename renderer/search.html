@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>PRISMA Launcher</title>
+<style>
+    * { box-sizing: border-box; }
+    html, body {
+        margin: 0;
+        background: transparent;
+        font-family: -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+        overflow: hidden;
+    }
+    .panel {
+        margin: 6px;
+        background: #152233;
+        border: 1px solid #1E3A5F;
+        border-radius: 14px;
+        box-shadow: 0 12px 40px rgba(0,0,0,.6);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    .search-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px;
+        border-bottom: 1px solid transparent;
+    }
+    .search-row.has-results { border-bottom-color: #1E3A5F; }
+    .search-row svg { width: 18px; height: 18px; fill: #4E6B87; flex-shrink: 0; }
+    .search-row input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: #E8F4F8;
+        font-size: 16px;
+    }
+    .search-row input::placeholder { color: #4E6B87; }
+    .hint {
+        font-size: 11px;
+        color: #4E6B87;
+        background: #1A2E44;
+        border-radius: 4px;
+        padding: 2px 6px;
+        flex-shrink: 0;
+    }
+    .settings-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        opacity: .45;
+        cursor: pointer;
+        flex-shrink: 0;
+        -webkit-app-region: no-drag;
+    }
+    .settings-btn:hover { opacity: .9; background: rgba(255,255,255,.08); }
+    .settings-btn svg { width: 16px; height: 16px; fill: #94A3B8; }
+    .results {
+        padding: 6px;
+    }
+    .item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        color: #E8F4F8;
+        text-decoration: none;
+    }
+    .item:hover, .item.active { background: rgba(46, 134, 171, .18); }
+    .item-icon {
+        width: 26px; height: 26px; border-radius: 6px; background: #1A2E44;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .item-icon svg { width: 13px; height: 13px; fill: #2E86AB; }
+    .item-body { min-width: 0; flex: 1; }
+    .item-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item-url { font-size: 11px; color: #94A3B8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .empty { padding: 24px 16px; text-align: center; color: #4E6B87; font-size: 13px; }
+    .quick-actions { padding: 14px 16px; }
+    .quick-actions .qa-url {
+        font-size: 12px; color: #94A3B8; white-space: nowrap; overflow: hidden;
+        text-overflow: ellipsis; margin-bottom: 12px;
+    }
+    .qa-buttons { display: flex; gap: 8px; }
+    .qa-btn {
+        flex: 1;
+        display: flex; align-items: center; justify-content: center; gap: 6px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #1E3A5F;
+        background: #1A2E44;
+        color: #E8F4F8;
+        font-size: 13px;
+        cursor: pointer;
+    }
+    .qa-btn:hover { background: rgba(46, 134, 171, .18); border-color: #2E86AB; }
+    .qa-btn svg { width: 15px; height: 15px; fill: #2E86AB; }
+    .qa-btn:disabled { opacity: .5; cursor: default; }
+    .qa-result { margin-top: 12px; padding: 12px; border-radius: 8px; background: #1A2E44; }
+    .qa-result img { display: block; margin: 0 auto 10px; width: 140px; height: 140px; border-radius: 6px; background: #fff; }
+    .qa-result .qa-link-row { display: flex; align-items: center; gap: 8px; }
+    .qa-result input {
+        flex: 1; background: #152233; border: 1px solid #1E3A5F; border-radius: 6px;
+        color: #E8F4F8; font-size: 12px; padding: 7px 8px;
+    }
+    .qa-result .qa-copy {
+        flex-shrink: 0; padding: 7px 10px; border-radius: 6px; border: none;
+        background: var(--accent, #2E86AB); background: #2E86AB; color: #fff; font-size: 12px; cursor: pointer;
+    }
+    .qa-feedback { font-size: 11px; color: #22C55E; margin-top: 6px; min-height: 14px; }
+    .qa-feedback.error { color: #EF4444; }
+</style>
+</head>
+<body>
+    <div class="panel">
+        <div class="search-row" id="searchRow">
+            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+            <input type="text" id="searchInput" placeholder="Buscar links, favoritos, QR codes..." autocomplete="off">
+            <span class="hint" id="shortcutHint">Esc fecha</span>
+            <button class="settings-btn" id="settingsBtn" title="Configurações" type="button">
+                <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.44.17-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.49.49 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.25.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+            </button>
+        </div>
+        <div class="results" id="results"></div>
+    </div>
+
+    <script src="search.js"></script>
+</body>
+</html>
