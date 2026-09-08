@@ -4,7 +4,9 @@ const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, shell, screen, 
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const Store = require('electron-store');
+const initSqlJs = require('sql.js');
 
 const store = new Store({
     defaults: {
@@ -14,6 +16,7 @@ const store = new Store({
         shortcut: 'CommandOrControl+Alt+K',
         launchAtStartup: true,
         syncBookmarks: false,
+        syncFiles: false,
     },
 });
 
@@ -193,8 +196,8 @@ function createTray() {
     rebuildTrayMenu();
 }
 
-// ── Sincronização automática de favoritos (Chrome/Edge/Brave) ─────────────
-// Opt-in via Configurações. Lê o arquivo local "Bookmarks" (JSON) desses
+// ── Sincronização automática de favoritos (Chrome/Edge/Brave/Firefox) ─────
+// Opt-in via Configurações. Lê o arquivo local de favoritos desses
 // navegadores, que já é o mesmo formato usado por ferramentas equivalentes
 // (ex.: extensão Browser Bookmarks do ueli) — não existe API de "permissão"
 // do SO pra isso, é leitura direta de um arquivo do próprio usuário.
@@ -255,19 +258,198 @@ function parseChromiumBookmarksFile(filePath) {
     }
 }
 
+// ── Firefox — places.sqlite via sql.js (WASM, sem compilação nativa) ──────
+
+function firefoxProfilesRoot() {
+    const home = os.homedir();
+    const platform = process.platform;
+
+    if (platform === 'linux') return path.join(home, '.mozilla/firefox');
+    if (platform === 'win32') return path.join(process.env.APPDATA || path.join(home, 'AppData/Roaming'), 'Mozilla/Firefox/Profiles');
+    if (platform === 'darwin') return path.join(home, 'Library/Application Support/Firefox/Profiles');
+    return null;
+}
+
+function findFirefoxPlacesFiles() {
+    const root = firefoxProfilesRoot();
+    if (!root) return [];
+
+    let entries;
+    try {
+        entries = fs.readdirSync(root, { withFileTypes: true });
+    } catch (e) {
+        return [];
+    }
+
+    const files = [];
+    for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const candidate = path.join(root, entry.name, 'places.sqlite');
+        try {
+            if (fs.statSync(candidate).isFile()) files.push(candidate);
+        } catch (e) { /* não é um perfil válido — ignora */ }
+    }
+    return files;
+}
+
+let sqlJsPromise = null;
+function getSqlJs() {
+    if (!sqlJsPromise) {
+        sqlJsPromise = initSqlJs({
+            locateFile: (file) => path.join(__dirname, 'node_modules/sql.js/dist', file),
+        });
+    }
+    return sqlJsPromise;
+}
+
+/**
+ * O Firefox mantém o places.sqlite aberto (modo WAL) enquanto está rodando —
+ * copiamos pra um arquivo temporário antes de ler, mesma técnica usada por
+ * qualquer ferramenta de terceiro que lê esse arquivo com o navegador aberto.
+ * Isso pode perder escritas muito recentes ainda não fechadas no WAL, o que
+ * é uma limitação aceitável pra uma sincronização periódica, não em tempo real.
+ */
+async function readFirefoxBookmarksFile(sqlitePath) {
+    const tmpPath = path.join(os.tmpdir(), 'prisma-places-' + crypto.randomBytes(8).toString('hex') + '.sqlite');
+
+    try {
+        fs.copyFileSync(sqlitePath, tmpPath);
+        const SQL = await getSqlJs();
+        const buffer = fs.readFileSync(tmpPath);
+        const db = new SQL.Database(buffer);
+
+        try {
+            const res = db.exec(
+                `SELECT b.title AS title, p.url AS url
+                 FROM moz_bookmarks b
+                 JOIN moz_places p ON b.fk = p.id
+                 WHERE b.type = 1 AND p.url IS NOT NULL AND p.url NOT LIKE 'place:%'`
+            );
+            if (!res.length) return [];
+
+            const { columns, values } = res[0];
+            const titleIdx = columns.indexOf('title');
+            const urlIdx = columns.indexOf('url');
+            return values
+                .map((row) => ({ title: row[titleIdx] || row[urlIdx], url: row[urlIdx] }))
+                .filter((item) => !!item.url);
+        } finally {
+            db.close();
+        }
+    } catch (e) {
+        return [];
+    } finally {
+        fs.unlink(tmpPath, () => {});
+    }
+}
+
+async function readAllFirefoxBookmarks() {
+    const files = findFirefoxPlacesFiles();
+    const out = [];
+    for (const file of files) {
+        out.push(...(await readFirefoxBookmarksFile(file)));
+    }
+    return out;
+}
+
+// ── Busca de arquivos locais (Downloads, Documentos, Área de Trabalho) ────
+// Opt-in separado do sync de favoritos. Diferença crítica de privacidade:
+// isso NUNCA sai da máquina — não existe endpoint de servidor pra isso, o
+// índice fica só na memória do processo principal e é servido ao renderer
+// via IPC. Selecionar um resultado abre o arquivo localmente (shell.openPath),
+// nunca faz upload.
+
+const LOCAL_FILES_MAX = 1500;
+const LOCAL_FILES_MAX_DEPTH = 3;
+const LOCAL_FILES_SKIP_DIRS = new Set(['node_modules', '.git', '.cache', '__pycache__']);
+
+function candidateFileFolders() {
+    const home = os.homedir();
+    const platform = process.platform;
+    const candidates = [
+        path.join(home, 'Downloads'),
+        path.join(home, 'Documents'),
+        path.join(home, 'Desktop'),
+    ];
+
+    if (platform === 'linux') {
+        // Distros com locale pt-BR costumam nomear as pastas em português.
+        candidates.push(
+            path.join(home, 'Downloads'),
+            path.join(home, 'Documentos'),
+            path.join(home, 'Área de Trabalho')
+        );
+    }
+
+    const seen = new Set();
+    return candidates.filter((p) => {
+        if (seen.has(p)) return false;
+        seen.add(p);
+        try { return fs.statSync(p).isDirectory(); } catch (e) { return false; }
+    });
+}
+
+function walkFilesDir(dir, depth, out, roots) {
+    if (out.length >= LOCAL_FILES_MAX || depth > LOCAL_FILES_MAX_DEPTH) return;
+
+    let entries;
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+        return;
+    }
+
+    for (const entry of entries) {
+        if (out.length >= LOCAL_FILES_MAX) return;
+        if (entry.name.startsWith('.')) continue; // arquivos/pastas ocultos
+
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory()) {
+            if (LOCAL_FILES_SKIP_DIRS.has(entry.name)) continue;
+            walkFilesDir(fullPath, depth + 1, out, roots);
+        } else if (entry.isFile()) {
+            out.push({ title: entry.name, path: fullPath });
+        }
+    }
+}
+
+function listLocalFiles() {
+    const folders = candidateFileFolders();
+    const out = [];
+    for (const folder of folders) {
+        walkFilesDir(folder, 0, out, folders);
+        if (out.length >= LOCAL_FILES_MAX) break;
+    }
+    return out;
+}
+
+/** Confirma que um caminho está dentro de uma das pastas permitidas antes de abrir. */
+function isPathInsideAllowedFolders(targetPath) {
+    const resolved = path.resolve(targetPath);
+    return candidateFileFolders().some((folder) => {
+        const resolvedFolder = path.resolve(folder);
+        return resolved === resolvedFolder || resolved.startsWith(resolvedFolder + path.sep);
+    });
+}
+
 const bookmarkFileState = new Map(); // filePath -> última mtime vista
 
 async function syncBookmarksNow() {
     if (!store.get('syncBookmarks') || !isConfigured()) return;
 
-    const files = candidateBookmarkFiles();
-    if (!files.length) return;
+    const chromiumFiles = candidateBookmarkFiles();
+    const firefoxFiles = findFirefoxPlacesFiles();
+    if (!chromiumFiles.length && !firefoxFiles.length) return;
 
     const byUrl = new Map();
-    for (const file of files) {
+    for (const file of chromiumFiles) {
         for (const item of parseChromiumBookmarksFile(file)) {
             if (item.url && !byUrl.has(item.url)) byUrl.set(item.url, item);
         }
+    }
+    for (const item of await readAllFirefoxBookmarks()) {
+        if (item.url && !byUrl.has(item.url)) byUrl.set(item.url, item);
     }
 
     const items = Array.from(byUrl.values());
@@ -291,7 +473,7 @@ function startBookmarkSyncPolling() {
     setInterval(() => {
         if (!store.get('syncBookmarks')) return;
 
-        const files = candidateBookmarkFiles();
+        const files = candidateBookmarkFiles().concat(findFirefoxPlacesFiles());
         let changed = false;
 
         for (const file of files) {
@@ -386,6 +568,7 @@ ipcMain.handle('save-config', (event, config) => {
     store.set('apiKey', String(config.apiKey || ''));
     store.set('launchAtStartup', !!config.launchAtStartup);
     store.set('syncBookmarks', !!config.syncBookmarks);
+    store.set('syncFiles', !!config.syncFiles);
 
     const registered = registerShortcut(config.shortcut || DEFAULT_SHORTCUT);
     store.set('shortcut', currentShortcut || DEFAULT_SHORTCUT);
@@ -421,6 +604,19 @@ ipcMain.handle('open-external', (event, url) => {
 
 ipcMain.handle('copy-to-clipboard', (event, text) => {
     clipboard.writeText(String(text ?? ''));
+    return { success: true };
+});
+
+ipcMain.handle('get-local-files', () => {
+    if (!store.get('syncFiles')) return [];
+    return listLocalFiles();
+});
+
+ipcMain.handle('open-local-file', (event, filePath) => {
+    if (typeof filePath !== 'string' || !isPathInsideAllowedFolders(filePath)) {
+        return { success: false };
+    }
+    shell.openPath(filePath);
     return { success: true };
 });
 

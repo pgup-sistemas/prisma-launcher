@@ -7,6 +7,7 @@
     var shortcutEl = document.getElementById('shortcut');
     var launchAtStartupEl = document.getElementById('launchAtStartup');
     var syncBookmarksEl = document.getElementById('syncBookmarks');
+    var syncFilesEl = document.getElementById('syncFiles');
     var saveBtn = document.getElementById('saveBtn');
     var feedbackEl = document.getElementById('feedback');
 
@@ -21,6 +22,7 @@
         apiKeyEl.value = cfg.apiKey || '';
         launchAtStartupEl.checked = cfg.launchAtStartup !== false;
         syncBookmarksEl.checked = !!cfg.syncBookmarks;
+        syncFilesEl.checked = !!cfg.syncFiles;
 
         currentAccelerator = cfg.shortcut || DEFAULT_SHORTCUT_ACCELERATOR;
         shortcutEl.value = acceleratorToDisplay(currentAccelerator);
@@ -108,6 +110,7 @@
             shortcut: currentAccelerator,
             launchAtStartup: launchAtStartupEl.checked,
             syncBookmarks: syncBookmarksEl.checked,
+            syncFiles: syncFilesEl.checked,
         }).then(function (result) {
             saveBtn.disabled = false;
             saveBtn.textContent = 'Salvar';

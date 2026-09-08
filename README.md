@@ -18,7 +18,7 @@ amarrada à conta do usuário num SaaS em vez de um sistema de plugins genérico
 - **Ações rápidas** — cole uma URL na busca e gere QR Code ou encurte o link ali mesmo,
   sem trocar de janela.
 - **Sincronização de favoritos** (opt-in) — monitora o arquivo local de favoritos do
-  Chrome/Edge/Brave/Chromium e importa os novos automaticamente para sua conta PRISMA.
+  Chrome/Edge/Brave/Chromium e Firefox e importa os novos automaticamente para sua conta PRISMA.
 - **Checagem de atualização** — compara a versão instalada com a mais recente publicada
   pelo servidor e avisa na bandeja quando houver uma nova.
 - Multiplataforma: Windows, macOS e Linux.

@@ -15,12 +15,14 @@
     var CFG = null; // { serverUrl, uid, apiKey }
     var indexCache = null;
     var indexPromise = null;
+    var localFilesCache = [];
     var currentItems = [];
     var activeIndex = -1;
 
     var ICON_LINK = '<svg viewBox="0 0 24 24"><path d="M3.9 12a5 5 0 0 1 5-5H13v2H8.9a3 3 0 0 0 0 6H13v2H8.9a5 5 0 0 1-5-5zm6.1 1h4v-2h-4v2zm5.1-6H11v2h4.1a3 3 0 0 1 0 6H11v2h4.1a5 5 0 0 0 0-10z"/></svg>';
     var ICON_QR = '<svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm10 0h2v2h-2zm4 0h2v2h-2zm-4 4h2v2h-2zm4 0h2v2h-2zm-2-4h2v2h-2z"/></svg>';
     var ICON_SCISSORS = '<svg viewBox="0 0 24 24"><path d="M9.64 7.64a3 3 0 1 0-1.09 1.41L10 10.5l-1.45 1.45a3 3 0 1 0 1.09 1.41L12 11l4.5 4.5A2.5 2.5 0 1 0 18 14l-6-6 6-6a2.5 2.5 0 1 0-1.5-1.5L12 5 9.64 7.64zM6 5.5A1.5 1.5 0 1 1 6 8.5a1.5 1.5 0 0 1 0-3zm0 10A1.5 1.5 0 1 1 6 18.5a1.5 1.5 0 0 1 0-3z"/></svg>';
+    var ICON_FILE = '<svg viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-7-7zm0 7V3.5L18.5 9H13z"/></svg>';
     var URL_RE = /^https?:\/\/\S+$/i;
 
     // ── Bitap fuzzy search (máx. 1 erro) — mesmo algoritmo do launcher-widget.js ──
@@ -143,6 +145,25 @@
             .then(function (data) { indexCache = data; return data; })
             .catch(function (err) { indexPromise = null; throw err; });
         return indexPromise;
+    }
+
+    // Arquivos locais (Downloads/Documentos/Área de Trabalho) — opt-in, nunca sai da máquina.
+    function loadLocalFiles() {
+        return window.prisma.getLocalFiles().then(function (files) {
+            localFilesCache = (files || []).map(function (f) {
+                return {
+                    title: f.title,
+                    url: f.path,
+                    path: f.path,
+                    source: 'local-file',
+                    icon: 'local-file',
+                    tags: [],
+                    use_count: 0,
+                    last_used_at: null,
+                };
+            });
+            return localFilesCache;
+        }).catch(function () { return []; });
     }
 
     function track(item) {
@@ -270,8 +291,9 @@
 
         searchRow.classList.add('has-results');
         resultsEl.innerHTML = items.map(function (item, i) {
+            var icon = item.source === 'local-file' ? ICON_FILE : ICON_LINK;
             return '<a class="item' + (i === 0 ? ' active' : '') + '" data-idx="' + i + '" href="#">' +
-                '<span class="item-icon">' + ICON_LINK + '</span>' +
+                '<span class="item-icon">' + icon + '</span>' +
                 '<span class="item-body">' +
                 '<span class="item-title">' + escapeHtml(item.title) + '</span><br>' +
                 '<span class="item-url">' + escapeHtml(item.url) + '</span>' +
@@ -291,6 +313,12 @@
 
     function selectItem(item) {
         if (!item) return;
+        if (item.source === 'local-file') {
+            // Arquivo local: abre direto, nunca passa pelo servidor (nem pra "track").
+            window.prisma.openLocalFile(item.path);
+            closeWindow();
+            return;
+        }
         track(item);
         window.prisma.openExternal(item.url);
         closeWindow();
@@ -317,7 +345,7 @@
         }
 
         debounceTimer = setTimeout(function () {
-            var source = (indexCache && indexCache.links) || [];
+            var source = ((indexCache && indexCache.links) || []).concat(localFilesCache);
             currentItems = rankResults(source, query);
             renderResults(currentItems);
         }, 100);
@@ -376,8 +404,10 @@
 
     function fetchAndShowDefault() {
         renderEmpty('Carregando…');
+        loadLocalFiles(); // dispara em paralelo, não bloqueia a exibição da conta
         loadIndex(true).then(function (data) {
-            currentItems = rankResults(data.links || [], '');
+            var source = (data.links || []).concat(localFilesCache);
+            currentItems = rankResults(source, '');
             renderResults(currentItems);
         }).catch(function () {
             renderEmpty('Não foi possível conectar ao servidor PRISMA.');

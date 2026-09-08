@@ -143,8 +143,19 @@
         <div>
             <label for="syncBookmarks" style="margin:0;">Sincronizar favoritos do navegador automaticamente</label>
             <small class="hint" style="margin-top:2px;">
-                Lê o arquivo local de favoritos do Chrome/Edge/Brave e envia só os novos pra sua conta PRISMA
+                Lê o arquivo local de favoritos do Chrome/Edge/Brave/Firefox e envia só os novos pra sua conta PRISMA
                 (verifica a cada 30s). Nada é enviado sem sua autorização aqui.
+            </small>
+        </div>
+    </div>
+
+    <div class="checkbox-row" style="align-items:flex-start;">
+        <input type="checkbox" id="syncFiles" style="margin-top:2px;">
+        <div>
+            <label for="syncFiles" style="margin:0;">Buscar arquivos locais (Downloads, Documentos, Área de Trabalho)</label>
+            <small class="hint" style="margin-top:2px;">
+                Inclui arquivos dessas pastas nos resultados da busca. Fica só no seu computador —
+                nunca é enviado pro servidor PRISMA, nem aparece em outro dispositivo.
             </small>
         </div>
     </div>
