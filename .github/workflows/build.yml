@@ -13,8 +13,10 @@ name: Build
 # Sem certificado de assinatura de código configurado, os builds saem sem
 # assinatura digital (funcionam normalmente, mas o Windows mostra o aviso do
 # SmartScreen e o macOS pode pedir confirmação extra no Gatekeeper). Pra
-# assinar de verdade, configure os secrets CSC_LINK/CSC_KEY_PASSWORD (mac) e
-# WIN_CSC_LINK/WIN_CSC_KEY_PASSWORD (windows) nas configurações do repositório.
+# assinar de verdade: adicione os secrets CSC_LINK/CSC_KEY_PASSWORD (mac) e/ou
+# WIN_CSC_LINK/WIN_CSC_KEY_PASSWORD (windows) em Settings → Secrets and
+# variables → Actions, E descomente as linhas correspondentes no passo de
+# build mais abaixo (ver comentário lá — não basta só criar o secret).
 
 on:
   push:
@@ -43,7 +45,7 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Cache do Electron/electron-builder
@@ -62,24 +64,30 @@ jobs:
       - name: Gerar ícones .ico/.icns a partir do icon.png
         run: npx --yes electron-icon-builder --input=assets/icon.png --output=assets --flatten
 
+      # IMPORTANTE: as variáveis CSC_LINK/WIN_CSC_LINK só devem existir no ambiente
+      # quando você configurar certificado de assinatura de verdade (secrets do
+      # repositório). Um secret que não existe vira STRING VAZIA em ${{ secrets.X }},
+      # e uma CSC_LINK="" faz o electron-builder tentar assinar com um caminho vazio
+      # (resolve pra raiz do projeto → erro "not a file"), bem diferente de CSC_LINK
+      # simplesmente não estar definida (que faz ele pular a assinatura, sem erro).
+      # Por isso essas linhas ficam comentadas até você ter os certificados:
+      #   CSC_LINK: ${{ secrets.CSC_LINK }}
+      #   CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      #   WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+      #   WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
       - name: Build (push sem tag — sem publicar)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: npx electron-builder --publish never
         env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Build e publicar (tag v*)
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: npx electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload dos instaladores como artifact
         uses: actions/upload-artifact@v4
