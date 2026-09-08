@@ -1,6 +1,6 @@
 {
   "name": "prisma-launcher-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Agente de busca ultrarrápida do PRISMA — atalho global, favoritos e links direto do PC",
   "main": "main.js",
   "author": {
