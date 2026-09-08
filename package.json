@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "description": "Agente de busca ultrarrápida do PRISMA — atalho global, favoritos e links direto do PC",
   "main": "main.js",
-  "author": "PageUp Sistemas",
+  "author": {
+    "name": "PageUp Sistemas",
+    "email": "pageupsistemas@gmail.com"
+  },
   "license": "MIT",
   "private": true,
   "repository": {
@@ -29,6 +32,11 @@
   "build": {
     "appId": "com.pageupsistemas.prisma.launcher",
     "productName": "PRISMA Launcher",
+    "publish": {
+      "provider": "github",
+      "owner": "pgup-sistemas",
+      "repo": "prisma-launcher"
+    },
     "files": [
       "main.js",
       "preload.js",
@@ -39,13 +47,13 @@
       "target": [
         "nsis"
       ],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icons/icon.ico"
     },
     "mac": {
       "target": [
         "dmg"
       ],
-      "icon": "assets/icon.icns",
+      "icon": "assets/icons/icon.icns",
       "category": "public.app-category.productivity"
     },
     "linux": {

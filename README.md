@@ -19,6 +19,8 @@ amarrada à conta do usuário num SaaS em vez de um sistema de plugins genérico
   sem trocar de janela.
 - **Sincronização de favoritos** (opt-in) — monitora o arquivo local de favoritos do
   Chrome/Edge/Brave/Chromium e Firefox e importa os novos automaticamente para sua conta PRISMA.
+- **Busca de arquivos locais** (opt-in) — inclui Downloads/Documentos/Área de Trabalho
+  nos resultados. Fica só no seu computador, nunca é enviado pro servidor.
 - **Checagem de atualização** — compara a versão instalada com a mais recente publicada
   pelo servidor e avisa na bandeja quando houver uma nova.
 - Multiplataforma: Windows, macOS e Linux.
@@ -42,20 +44,37 @@ de engrenagem dentro da busca reabre as Configurações a qualquer momento.
 
 ## Gerando os instaladores
 
+Builds do Electron pra Windows/macOS não são viáveis via cross-compilation
+a partir de Linux (o macOS em particular exige as ferramentas da própria
+Apple pra assinar e gerar o `.dmg`). Por isso, o [workflow do GitHub Actions](.github/workflows/build.yml)
+builda os três instaladores em paralelo, cada um no seu SO nativo
+(`ubuntu-latest`, `windows-latest`, `macos-latest`):
+
+- Push em qualquer branch: builda os três e sobe como *artifact* (aba
+  Actions → clique no run → baixe o zip) — não precisa criar tag.
+- Tag `vX.Y.Z` (ex: `git tag v0.2.0 && git push --tags`): builda e publica
+  automaticamente numa [GitHub Release](https://github.com/pgup-sistemas/prisma-launcher/releases)
+  com o mesmo nome, já com os instaladores anexados.
+
+Sem certificado de assinatura configurado (secrets `CSC_LINK`/`WIN_CSC_LINK`),
+os builds saem sem assinatura digital — funcionam normalmente, mas o Windows
+mostra o aviso do SmartScreen e o macOS pode pedir uma confirmação extra no
+Gatekeeper na primeira abertura.
+
+### Build local (só funciona pro seu próprio SO)
+
 ```bash
-npm run dist:linux   # .AppImage e .deb
-npm run dist:win      # .exe (NSIS) — precisa rodar em/via Windows
-npm run dist:mac       # .dmg — precisa rodar em macOS
+npm run dist:linux   # .AppImage e .deb — só funciona rodando em Linux
+npm run dist:win      # .exe (NSIS) — só funciona rodando em Windows
+npm run dist:mac       # .dmg — só funciona rodando em macOS
 ```
 
-Ícones `.ico`/`.icns` (só existe `assets/icon.png` por padrão):
+Ícones `.ico`/`.icns` (só existe `assets/icon.png` versionado; o CI gera os
+dois formatos automaticamente antes do build, mas pra build local rode antes):
 
 ```bash
 npx electron-icon-builder --input=assets/icon.png --output=assets --flatten
 ```
-
-Builds multiplataforma do Electron normalmente precisam rodar no próprio SO de
-destino (ou via CI — veja [`.github/workflows`](.github/workflows) se configurado).
 
 ## Arquitetura
 
@@ -77,6 +96,8 @@ assets/                  ícones (app e bandeja)
 | `test-shortcut` | invoke | testa se um atalho está disponível sem substituir o atual |
 | `open-external` | invoke | abre URL no navegador padrão (só `http(s)://`) |
 | `copy-to-clipboard` | invoke | copia texto pra área de transferência (via `clipboard` do Electron) |
+| `get-local-files` | invoke | lista arquivos de Downloads/Documentos/Área de Trabalho (só se `syncFiles` estiver ligado) — nunca sai do processo principal |
+| `open-local-file` | invoke | abre um arquivo local (`shell.openPath`), validando que o caminho está dentro das pastas permitidas |
 | `hide-search-window` / `resize-search-window` | send | controla a janela de busca |
 | `open-settings` / `close-settings` | invoke | abre/fecha a janela de Configurações |
 | `window-shown` | on (main→renderer) | avisa a busca que a janela ficou visível |
@@ -107,6 +128,10 @@ propósito — evita preflight CORS, já que o renderer roda em origem `file://`
   usuário na tela de Configurações.
 - Sincronização de favoritos é **opt-in** (desligada por padrão) e só lê o arquivo
   local do navegador — nada é enviado sem o usuário habilitar explicitamente a opção.
+- Busca de arquivos locais também é **opt-in**, roda inteiramente no processo
+  principal (nunca passa por rede) e `open-local-file` valida que o caminho
+  pedido está de fato dentro de Downloads/Documentos/Área de Trabalho antes de
+  abrir — bloqueia tentativas de abrir arquivos arbitrários ou path traversal.
 
 ## Licença
 

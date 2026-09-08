@@ -1,0 +1,95 @@
+name: Build
+
+# Builda o PRISMA Launcher nos três sistemas operacionais usando os runners
+# nativos do GitHub Actions — cada SO empacota o instalador dele mesmo
+# (.AppImage/.deb no Linux, .exe no Windows, .dmg no macOS), sem precisar de
+# cross-compilation (que não é viável pra macOS a partir de Linux/Windows).
+#
+# - Push em qualquer branch / Pull Request: builda e sobe como artifact pra
+#   download manual (não publica release).
+# - Tag "v*" (ex: v0.2.0): builda e publica automaticamente numa GitHub
+#   Release com esse nome, anexando os instaladores dos três SOs.
+#
+# Sem certificado de assinatura de código configurado, os builds saem sem
+# assinatura digital (funcionam normalmente, mas o Windows mostra o aviso do
+# SmartScreen e o macOS pode pedir confirmação extra no Gatekeeper). Pra
+# assinar de verdade, configure os secrets CSC_LINK/CSC_KEY_PASSWORD (mac) e
+# WIN_CSC_LINK/WIN_CSC_KEY_PASSWORD (windows) nas configurações do repositório.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Cache do Electron/electron-builder
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Gerar ícones .ico/.icns a partir do icon.png
+        run: npx --yes electron-icon-builder --input=assets/icon.png --output=assets --flatten
+
+      - name: Build (push sem tag — sem publicar)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: npx electron-builder --publish never
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      - name: Build e publicar (tag v*)
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      - name: Upload dos instaladores como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prisma-launcher-${{ matrix.os }}
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.exe
+            dist/*.dmg
+            dist/*.blockmap
+          if-no-files-found: ignore
+          retention-days: 30
