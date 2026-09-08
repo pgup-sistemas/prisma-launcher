@@ -48,7 +48,8 @@
       "target": [
         "nsis"
       ],
-      "icon": "assets/icons/icon.ico"
+      "icon": "assets/icons/icon.ico",
+      "artifactName": "PRISMA-Launcher-Setup.${ext}"
     },
     "mac": {
       "target": [
@@ -58,7 +59,8 @@
         }
       ],
       "icon": "assets/icons/icon.icns",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "artifactName": "PRISMA-Launcher-${arch}.${ext}"
     },
     "linux": {
       "target": [
@@ -66,7 +68,8 @@
         "deb"
       ],
       "icon": "assets/icon.png",
-      "category": "Utility"
+      "category": "Utility",
+      "artifactName": "PRISMA-Launcher.${ext}"
     }
   }
 }
