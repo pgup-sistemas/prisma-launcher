@@ -117,13 +117,29 @@
         flex-shrink: 0; padding: 7px 10px; border-radius: 6px; border: none;
         background: var(--accent, #2E86AB); background: #2E86AB; color: #fff; font-size: 12px; cursor: pointer;
     }
+    .qa-qr-actions { display: flex; gap: 8px; }
     .qa-result .qa-qr-download {
-        display: block; text-align: center; padding: 7px 10px; border-radius: 6px;
-        background: #2E86AB; color: #fff; font-size: 12px; text-decoration: none;
+        flex: 1; display: block; text-align: center; padding: 7px 10px; border-radius: 6px;
+        background: #2E86AB; color: #fff; font-size: 12px; text-decoration: none; border: none; cursor: pointer;
+        font-family: inherit;
     }
     .qa-result .qa-qr-download:hover { opacity: .9; }
     .qa-feedback { font-size: 11px; color: #22C55E; margin-top: 6px; min-height: 14px; }
     .qa-feedback.error { color: #EF4444; }
+
+    .recents-row {
+        display: flex; align-items: center; gap: 6px; padding: 8px 12px 2px;
+        overflow-x: auto; white-space: nowrap;
+    }
+    .recents-label { font-size: 10px; color: #4E6B87; text-transform: uppercase; flex-shrink: 0; }
+    .recent-chip {
+        flex-shrink: 0; display: flex; align-items: center; gap: 4px;
+        padding: 4px 9px; border-radius: 999px; background: #1A2E44; border: 1px solid #1E3A5F;
+        color: #94A3B8; font-size: 11px; cursor: pointer; max-width: 140px;
+        overflow: hidden; text-overflow: ellipsis;
+    }
+    .recent-chip:hover { border-color: #2E86AB; color: #E8F4F8; }
+    .recent-chip svg { width: 11px; height: 11px; fill: #2E86AB; flex-shrink: 0; }
 </style>
 </head>
 <body>

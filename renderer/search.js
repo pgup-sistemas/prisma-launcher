@@ -25,6 +25,68 @@
     var ICON_FILE = '<svg viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-7-7zm0 7V3.5L18.5 9H13z"/></svg>';
     var URL_RE = /^https?:\/\/\S+$/i;
 
+    // ── Recentes (QR/links gerados) — só localStorage, sem servidor nem IPC extra ──
+    var RECENTS_KEY = 'prisma-recent-actions';
+    var RECENTS_MAX = 5;
+
+    function loadRecents() {
+        try {
+            var raw = localStorage.getItem(RECENTS_KEY);
+            var arr = raw ? JSON.parse(raw) : [];
+            return Array.isArray(arr) ? arr : [];
+        } catch (e) { return []; }
+    }
+
+    function pushRecent(type, itemUrl) {
+        if (!itemUrl) return;
+        var arr = loadRecents().filter(function (r) { return !(r.type === type && r.url === itemUrl); });
+        arr.unshift({ type: type, url: itemUrl });
+        arr = arr.slice(0, RECENTS_MAX);
+        try { localStorage.setItem(RECENTS_KEY, JSON.stringify(arr)); } catch (e) { /* ignora */ }
+    }
+
+    // ── Comandos de prefixo digitados na busca — "wa: telefone | mensagem" etc.
+    // Zero UI nova: tudo cabe no mesmo input, sem campos extras. ──
+    var QR_PREFIXES = { wa: 'whatsapp', whatsapp: 'whatsapp', pix: 'pix', vcard: 'vcard' };
+    var QR_LABELS = { whatsapp: 'WhatsApp', pix: 'PIX', vcard: 'vCard' };
+    var QR_SYNTAX = {
+        whatsapp: 'wa: telefone | mensagem',
+        pix: 'pix: chave | nome | cidade | valor',
+        vcard: 'vcard: nome | telefone | email',
+    };
+    var FILTER_PREFIXES = { arquivo: 'local-file', favorito: 'bookmark' };
+    var FILTER_SYNTAX = { 'local-file': 'arquivo: termo', bookmark: 'favorito: termo' };
+
+    function buildQrAction(type, raw) {
+        var parts = raw.split('|').map(function (s) { return s.trim(); });
+        var params;
+        if (type === 'whatsapp') {
+            params = { type: 'whatsapp', phone: parts[0] || '', text: parts[1] || '' };
+        } else if (type === 'pix') {
+            params = { type: 'pix', pix_key: parts[0] || '', name: parts[1] || '', city: parts[2] || '', amount: parts[3] || '' };
+        } else {
+            params = { type: 'vcard', name: parts[0] || '', phone: parts[1] || '', email: parts[2] || '' };
+        }
+        return { type: type, label: QR_LABELS[type] + ': ' + raw, params: params };
+    }
+
+    function parseCommand(query) {
+        var m = /^([a-z]+):\s*(.*)$/i.exec(query);
+        if (!m) return null;
+        var prefix = m[1].toLowerCase();
+        var rest = m[2];
+
+        if (QR_PREFIXES.hasOwnProperty(prefix)) {
+            var type = QR_PREFIXES[prefix];
+            return { kind: 'qr', syntax: QR_SYNTAX[type], action: rest ? buildQrAction(type, rest) : null };
+        }
+        if (FILTER_PREFIXES.hasOwnProperty(prefix)) {
+            var source = FILTER_PREFIXES[prefix];
+            return { kind: 'filter', source: source, query: rest, syntax: FILTER_SYNTAX[source] };
+        }
+        return null;
+    }
+
     // ── Bitap fuzzy search (máx. 1 erro) — mesmo algoritmo do launcher-widget.js ──
     function bitapExact(text, pattern) {
         var m = pattern.length;
@@ -187,14 +249,29 @@
             .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); });
     }
 
-    function renderQuickActions(url) {
+    function errorMessage(res, fallback) {
+        if (res && res.data) {
+            if (res.data.details) {
+                var first = Object.keys(res.data.details)[0];
+                if (first && res.data.details[first][0]) return res.data.details[first][0];
+            }
+            if (res.data.error) return res.data.error;
+        }
+        return fallback;
+    }
+
+    // action: { type: 'url'|'whatsapp'|'pix'|'vcard', label: string, params: object }
+    // "Encurtar link" só faz sentido pra URL — os demais tipos não têm destino navegável.
+    function renderQuickActions(action) {
+        var showLinkBtn = action.type === 'url';
+
         searchRow.classList.add('has-results');
         resultsEl.innerHTML =
             '<div class="quick-actions">' +
-            '<div class="qa-url">' + escapeHtml(url) + '</div>' +
+            '<div class="qa-url">' + escapeHtml(action.label) + '</div>' +
             '<div class="qa-buttons">' +
             '<button class="qa-btn" id="qaQr" type="button">' + ICON_QR + ' Gerar QR Code</button>' +
-            '<button class="qa-btn" id="qaLink" type="button">' + ICON_SCISSORS + ' Encurtar link</button>' +
+            (showLinkBtn ? '<button class="qa-btn" id="qaLink" type="button">' + ICON_SCISSORS + ' Encurtar link</button>' : '') +
             '</div>' +
             '<div class="qa-feedback" id="qaFeedback"></div>' +
             '<div id="qaResult"></div>' +
@@ -203,7 +280,7 @@
         var qaFeedback = document.getElementById('qaFeedback');
         var qaResult = document.getElementById('qaResult');
         var qaQrBtn = document.getElementById('qaQr');
-        var qaLinkBtn = document.getElementById('qaLink');
+        var qaLinkBtn = showLinkBtn ? document.getElementById('qaLink') : null;
 
         function setFeedback(msg, isError) {
             qaFeedback.textContent = msg || '';
@@ -213,56 +290,69 @@
         qaQrBtn.addEventListener('click', function () {
             if (!CFG || !CFG.uid) { setFeedback('Configure o agente primeiro.', true); return; }
             qaQrBtn.disabled = true;
-            qaLinkBtn.disabled = true;
+            if (qaLinkBtn) qaLinkBtn.disabled = true;
             setFeedback('Gerando QR Code…');
-            quickApiCall('/agent/qr', { uid: CFG.uid, key: CFG.apiKey, url: url })
+            var params = Object.assign({ uid: CFG.uid, key: CFG.apiKey }, action.params);
+            quickApiCall('/agent/qr', params)
                 .then(function (res) {
                     qaQrBtn.disabled = false;
-                    qaLinkBtn.disabled = false;
-                    if (!res.ok || !res.data.success) { setFeedback('Não foi possível gerar o QR Code.', true); return; }
+                    if (qaLinkBtn) qaLinkBtn.disabled = false;
+                    if (!res.ok || !res.data.success) { setFeedback(errorMessage(res, 'Não foi possível gerar o QR Code.'), true); return; }
                     setFeedback('QR Code gerado.');
+                    if (action.type === 'url') pushRecent('qr', action.label);
                     qaResult.innerHTML =
                         '<div class="qa-result">' +
                         '<img src="' + res.data.png_base64 + '" alt="QR Code">' +
+                        '<div class="qa-qr-actions">' +
                         '<a class="qa-qr-download" id="qaQrDownload" href="' + res.data.png_base64 + '" download="qrcode-prisma.png">Baixar PNG</a>' +
+                        '<button class="qa-qr-download" id="qaQrCopy" type="button">Copiar imagem</button>' +
+                        '</div>' +
                         '</div>';
                     resize();
-                })
-                .catch(function () {
-                    qaQrBtn.disabled = false;
-                    qaLinkBtn.disabled = false;
-                    setFeedback('Erro de conexão com o servidor.', true);
-                });
-        });
-
-        qaLinkBtn.addEventListener('click', function () {
-            if (!CFG || !CFG.uid) { setFeedback('Configure o agente primeiro.', true); return; }
-            qaQrBtn.disabled = true;
-            qaLinkBtn.disabled = true;
-            setFeedback('Encurtando link…');
-            quickApiCall('/agent/link', { uid: CFG.uid, key: CFG.apiKey, destination: url })
-                .then(function (res) {
-                    qaQrBtn.disabled = false;
-                    qaLinkBtn.disabled = false;
-                    if (!res.ok || !res.data.success) { setFeedback('Não foi possível encurtar o link.', true); return; }
-                    setFeedback('Link encurtado.');
-                    qaResult.innerHTML =
-                        '<div class="qa-result"><div class="qa-link-row">' +
-                        '<input type="text" readonly id="qaShortUrl" value="' + escapeHtml(res.data.short_url) + '">' +
-                        '<button class="qa-copy" id="qaCopy" type="button">Copiar</button>' +
-                        '</div></div>';
-                    resize();
-                    document.getElementById('qaCopy').addEventListener('click', function () {
-                        window.prisma.copyToClipboard(res.data.short_url);
-                        setFeedback('Copiado para a área de transferência.');
+                    document.getElementById('qaQrCopy').addEventListener('click', function () {
+                        window.prisma.copyImageToClipboard(res.data.png_base64).then(function (r) {
+                            setFeedback(r && r.success ? 'Imagem copiada.' : 'Não foi possível copiar a imagem.', !(r && r.success));
+                        });
                     });
                 })
                 .catch(function () {
                     qaQrBtn.disabled = false;
-                    qaLinkBtn.disabled = false;
+                    if (qaLinkBtn) qaLinkBtn.disabled = false;
                     setFeedback('Erro de conexão com o servidor.', true);
                 });
         });
+
+        if (qaLinkBtn) {
+            qaLinkBtn.addEventListener('click', function () {
+                if (!CFG || !CFG.uid) { setFeedback('Configure o agente primeiro.', true); return; }
+                qaQrBtn.disabled = true;
+                qaLinkBtn.disabled = true;
+                setFeedback('Encurtando link…');
+                quickApiCall('/agent/link', { uid: CFG.uid, key: CFG.apiKey, destination: action.params.url })
+                    .then(function (res) {
+                        qaQrBtn.disabled = false;
+                        qaLinkBtn.disabled = false;
+                        if (!res.ok || !res.data.success) { setFeedback(errorMessage(res, 'Não foi possível encurtar o link.'), true); return; }
+                        setFeedback('Link encurtado.');
+                        pushRecent('link', res.data.short_url);
+                        qaResult.innerHTML =
+                            '<div class="qa-result"><div class="qa-link-row">' +
+                            '<input type="text" readonly id="qaShortUrl" value="' + escapeHtml(res.data.short_url) + '">' +
+                            '<button class="qa-copy" id="qaCopy" type="button">Copiar</button>' +
+                            '</div></div>';
+                        resize();
+                        document.getElementById('qaCopy').addEventListener('click', function () {
+                            window.prisma.copyToClipboard(res.data.short_url);
+                            setFeedback('Copiado para a área de transferência.');
+                        });
+                    })
+                    .catch(function () {
+                        qaQrBtn.disabled = false;
+                        qaLinkBtn.disabled = false;
+                        setFeedback('Erro de conexão com o servidor.', true);
+                    });
+            });
+        }
 
         resize();
     }
@@ -285,16 +375,48 @@
         resize();
     }
 
-    function renderResults(items) {
-        activeIndex = items.length ? 0 : -1;
+    // Chips com o histórico curto de QR/links gerados — só aparece na tela padrão (busca vazia),
+    // pra nunca competir com resultados de busca real.
+    function recentsRowHtml() {
+        var recents = loadRecents();
+        if (!recents.length) return '';
+        var chips = recents.map(function (r, i) {
+            var icon = r.type === 'qr' ? ICON_QR : ICON_SCISSORS;
+            return '<span class="recent-chip" data-ridx="' + i + '" title="' + escapeHtml(r.url) + '">' + icon + escapeHtml(r.url) + '</span>';
+        }).join('');
+        return '<div class="recents-row"><span class="recents-label">Recentes</span>' + chips + '</div>';
+    }
 
-        if (!items.length) {
+    function bindRecentChips() {
+        var recents = loadRecents();
+        Array.prototype.forEach.call(resultsEl.querySelectorAll('.recent-chip'), function (el) {
+            el.addEventListener('click', function () {
+                var r = recents[parseInt(el.getAttribute('data-ridx'), 10)];
+                if (!r) return;
+                if (r.type === 'link') {
+                    window.prisma.copyToClipboard(r.url);
+                    closeWindow();
+                    return;
+                }
+                searchInput.value = r.url;
+                currentItems = [];
+                activeIndex = -1;
+                renderQuickActions({ type: 'url', label: r.url, params: { url: r.url } });
+            });
+        });
+    }
+
+    function renderResults(items, prefixHtml) {
+        activeIndex = items.length ? 0 : -1;
+        prefixHtml = prefixHtml || '';
+
+        if (!items.length && !prefixHtml) {
             renderEmpty('Nenhum resultado encontrado.');
             return;
         }
 
         searchRow.classList.add('has-results');
-        resultsEl.innerHTML = items.map(function (item, i) {
+        var itemsHtml = items.length ? items.map(function (item, i) {
             var icon = item.source === 'local-file' ? ICON_FILE : ICON_LINK;
             return '<a class="item' + (i === 0 ? ' active' : '') + '" data-idx="' + i + '" href="#">' +
                 '<span class="item-icon">' + icon + '</span>' +
@@ -302,7 +424,9 @@
                 '<span class="item-title">' + escapeHtml(item.title) + '</span><br>' +
                 '<span class="item-url">' + escapeHtml(item.url) + '</span>' +
                 '</span></a>';
-        }).join('');
+        }).join('') : '<div class="empty">Nenhum resultado encontrado.</div>';
+
+        resultsEl.innerHTML = prefixHtml + itemsHtml;
 
         Array.prototype.forEach.call(resultsEl.querySelectorAll('.item'), function (el) {
             el.addEventListener('click', function (e) {
@@ -311,6 +435,7 @@
                 selectItem(currentItems[idx]);
             });
         });
+        if (prefixHtml) bindRecentChips();
 
         resize();
     }
@@ -340,11 +465,37 @@
     searchInput.addEventListener('input', function () {
         clearTimeout(debounceTimer);
         var query = searchInput.value.trim();
+        shortcutHint.textContent = 'Esc fecha';
+
+        var cmd = parseCommand(query);
+        if (cmd) {
+            shortcutHint.textContent = cmd.syntax;
+
+            if (cmd.kind === 'qr') {
+                currentItems = [];
+                activeIndex = -1;
+                if (cmd.action) {
+                    renderQuickActions(cmd.action);
+                } else {
+                    renderEmpty(cmd.syntax);
+                }
+                return;
+            }
+
+            // filter: arquivo:/favorito: — restringe a busca por fonte, sem UI nova.
+            debounceTimer = setTimeout(function () {
+                var source = ((indexCache && indexCache.links) || []).concat(localFilesCache)
+                    .filter(function (it) { return it.source === cmd.source; });
+                currentItems = rankResults(source, cmd.query);
+                renderResults(currentItems);
+            }, 100);
+            return;
+        }
 
         if (URL_RE.test(query)) {
             currentItems = [];
             activeIndex = -1;
-            renderQuickActions(query);
+            renderQuickActions({ type: 'url', label: query, params: { url: query } });
             return;
         }
 
@@ -390,6 +541,7 @@
         searchInput.value = '';
         searchInput.focus();
         searchRow.classList.remove('has-results');
+        shortcutHint.textContent = 'Esc fecha';
 
         if (!CFG || !CFG.serverUrl) {
             window.prisma.getConfig().then(function (cfg) {
@@ -412,7 +564,7 @@
         loadIndex(true).then(function (data) {
             var source = (data.links || []).concat(localFilesCache);
             currentItems = rankResults(source, '');
-            renderResults(currentItems);
+            renderResults(currentItems, recentsRowHtml());
         }).catch(function () {
             renderEmpty('Não foi possível conectar ao servidor PRISMA.');
         });

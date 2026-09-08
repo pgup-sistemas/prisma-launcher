@@ -1,12 +1,13 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, shell, screen, clipboard } = require('electron');
+const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, shell, screen, clipboard, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const Store = require('electron-store');
 const initSqlJs = require('sql.js');
+const { autoUpdater } = require('electron-updater');
 
 const store = new Store({
     defaults: {
@@ -228,7 +229,12 @@ function registerShortcut(accelerator) {
     return false;
 }
 
-let updateInfo = null; // { version, download_url } quando há versão mais nova disponível
+// Estado da atualização, unificado pros dois caminhos possíveis:
+// - electron-updater (silencioso, baixa e instala) — builds empacotadas com publish no GitHub
+// - manual (abre a página de download) — fallback pra dev mode e alvos sem suporte
+//   a update silencioso (ex.: .deb no Linux só funciona via AppImage)
+// { status: 'manual'|'available'|'downloading'|'downloaded', version, download_url? }
+let updateInfo = null;
 
 function rebuildTrayMenu() {
     if (!tray) return;
@@ -240,10 +246,7 @@ function rebuildTrayMenu() {
 
     if (updateInfo) {
         items.push({ type: 'separator' });
-        items.push({
-            label: 'Nova versão disponível (' + updateInfo.version + ')',
-            click: () => shell.openExternal(updateInfo.download_url),
-        });
+        items.push(updateMenuItem());
     }
 
     items.push({ type: 'separator' });
@@ -251,6 +254,30 @@ function rebuildTrayMenu() {
 
     tray.setContextMenu(Menu.buildFromTemplate(items));
     tray.setToolTip(updateInfo ? 'PRISMA Launcher — nova versão disponível' : 'PRISMA Launcher');
+}
+
+function updateMenuItem() {
+    if (!updateInfo) return null;
+    switch (updateInfo.status) {
+        case 'available':
+            return {
+                label: 'Baixar atualização (' + updateInfo.version + ')',
+                click: () => { updateInfo.status = 'downloading'; rebuildTrayMenu(); autoUpdater.downloadUpdate(); },
+            };
+        case 'downloading':
+            return { label: 'Baixando atualização…', enabled: false };
+        case 'downloaded':
+            return {
+                label: 'Reiniciar e instalar (' + updateInfo.version + ')',
+                click: () => autoUpdater.quitAndInstall(),
+            };
+        case 'manual':
+        default:
+            return {
+                label: 'Nova versão disponível (' + updateInfo.version + ')',
+                click: () => shell.openExternal(updateInfo.download_url),
+            };
+    }
 }
 
 function createTray() {
@@ -569,7 +596,10 @@ function isNewerVersion(remote, local) {
     return false;
 }
 
-async function checkForUpdates() {
+// Fallback manual: usado em dev mode (app-update.yml só existe em builds empacotadas)
+// e quando o electron-updater falha (ex.: .deb no Linux, que não suporta update silencioso —
+// só o AppImage suporta nesse SO). Só notifica; instalar continua sendo manual.
+async function checkForUpdatesManual() {
     const serverUrl = store.get('serverUrl');
     if (!serverUrl) return;
 
@@ -579,7 +609,7 @@ async function checkForUpdates() {
         const data = await res.json();
 
         if (data && data.version && isNewerVersion(data.version, app.getVersion())) {
-            updateInfo = { version: data.version, download_url: data.download_url || (serverUrl + '/download') };
+            updateInfo = { status: 'manual', version: data.version, download_url: data.download_url || (serverUrl + '/download') };
         } else {
             updateInfo = null;
         }
@@ -587,6 +617,39 @@ async function checkForUpdates() {
     } catch (e) {
         // sem conexão ou servidor indisponível — silencioso, tenta de novo na próxima checagem
     }
+}
+
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+
+autoUpdater.on('update-available', (info) => {
+    updateInfo = { status: 'available', version: info.version };
+    rebuildTrayMenu();
+});
+autoUpdater.on('update-not-available', () => {
+    if (!updateInfo || updateInfo.status !== 'downloading') {
+        updateInfo = null;
+        rebuildTrayMenu();
+    }
+});
+autoUpdater.on('update-downloaded', (info) => {
+    updateInfo = { status: 'downloaded', version: info.version };
+    rebuildTrayMenu();
+});
+autoUpdater.on('error', () => {
+    // electron-updater não é suportado nesse alvo (ex.: .deb) ou falhou por outro motivo —
+    // cai pro fluxo manual em vez de deixar o usuário sem nenhum aviso.
+    checkForUpdatesManual();
+});
+
+function checkForUpdates() {
+    // app-update.yml (gerado pelo electron-builder) só existe em builds empacotadas —
+    // em dev mode o electron-updater sempre falha, então nem tentamos.
+    if (!app.isPackaged) {
+        checkForUpdatesManual();
+        return;
+    }
+    autoUpdater.checkForUpdates().catch(() => checkForUpdatesManual());
 }
 
 app.whenReady().then(() => {
@@ -674,6 +737,16 @@ ipcMain.handle('open-external', (event, url) => {
 
 ipcMain.handle('copy-to-clipboard', (event, text) => {
     clipboard.writeText(String(text ?? ''));
+    return { success: true };
+});
+
+ipcMain.handle('copy-image-to-clipboard', (event, dataUrl) => {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+        return { success: false };
+    }
+    const image = nativeImage.createFromDataURL(dataUrl);
+    if (image.isEmpty()) return { success: false };
+    clipboard.writeImage(image);
     return { success: true };
 });
 

@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('prisma', {
     testShortcut: (accelerator) => ipcRenderer.invoke('test-shortcut', accelerator),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     copyToClipboard: (text) => ipcRenderer.invoke('copy-to-clipboard', text),
+    copyImageToClipboard: (dataUrl) => ipcRenderer.invoke('copy-image-to-clipboard', dataUrl),
     getLocalFiles: () => ipcRenderer.invoke('get-local-files'),
     openLocalFile: (filePath) => ipcRenderer.invoke('open-local-file', filePath),
     hideSearchWindow: () => ipcRenderer.send('hide-search-window'),
