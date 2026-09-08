@@ -35,7 +35,8 @@
     "publish": {
       "provider": "github",
       "owner": "pgup-sistemas",
-      "repo": "prisma-launcher"
+      "repo": "prisma-launcher",
+      "draft": false
     },
     "files": [
       "main.js",
