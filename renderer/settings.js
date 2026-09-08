@@ -28,6 +28,18 @@
         shortcutEl.value = acceleratorToDisplay(currentAccelerator);
     });
 
+    // Chegou aqui via link "Conectar Launcher" do Perfil — servidor/UUID/chave já
+    // foram salvos pelo processo principal antes de abrir esta janela.
+    window.prisma.onConnectedViaLink(function () {
+        window.prisma.getConfig().then(function (cfg) {
+            serverUrlEl.value = cfg.serverUrl || '';
+            uidEl.value = cfg.uid || '';
+            apiKeyEl.value = cfg.apiKey || '';
+        });
+        feedbackEl.textContent = 'Conta conectada! Escolha seu atalho (ou mantenha o padrão) e clique em Salvar.';
+        feedbackEl.className = 'ok';
+    });
+
     function acceleratorToDisplay(accelerator) {
         return String(accelerator)
             .replace(/CommandOrControl/gi, 'Ctrl')

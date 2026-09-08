@@ -44,6 +44,12 @@
       "renderer/**/*",
       "assets/**/*"
     ],
+    "protocols": [
+      {
+        "name": "PRISMA Launcher Pairing",
+        "schemes": ["prisma-launcher"]
+      }
+    ],
     "win": {
       "target": [
         "nsis"

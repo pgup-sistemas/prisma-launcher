@@ -15,4 +15,5 @@ contextBridge.exposeInMainWorld('prisma', {
     openSettings: () => ipcRenderer.invoke('open-settings'),
     closeSettings: () => ipcRenderer.invoke('close-settings'),
     onWindowShown: (callback) => ipcRenderer.on('window-shown', callback),
+    onConnectedViaLink: (callback) => ipcRenderer.on('connected-via-link', callback),
 });

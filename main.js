@@ -27,13 +27,77 @@ let searchWindow = null;
 let settingsWindow = null;
 let currentShortcut = null;
 
+// ── Pareamento via link customizado (prisma-launcher://) ──────────────────
+// O Perfil do PRISMA mostra um botão "Conectar Launcher" com um link
+// prisma-launcher://conectar?server=...&uid=...&key=... — o SO só sabe abrir
+// esse link se o app já estiver instalado (é o instalador que registra o
+// protocolo), por isso o botão de download continua sendo o passo 1.
+const DEEP_LINK_PROTOCOL = 'prisma-launcher';
+let pendingDeepLink = null;
+
+if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+        app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+    }
+} else {
+    app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
+}
+
+function findDeepLinkArg(argv) {
+    return argv.find((arg) => arg.startsWith(DEEP_LINK_PROTOCOL + '://'));
+}
+
+function handleDeepLink(rawUrl) {
+    let parsed;
+    try {
+        parsed = new URL(rawUrl);
+    } catch (e) {
+        return;
+    }
+    if (parsed.protocol !== DEEP_LINK_PROTOCOL + ':') return;
+
+    const server = parsed.searchParams.get('server');
+    const uid = parsed.searchParams.get('uid');
+    const key = parsed.searchParams.get('key');
+    if (!server || !uid || !key) return;
+
+    store.set('serverUrl', String(server).replace(/\/+$/, ''));
+    store.set('uid', String(uid));
+    store.set('apiKey', String(key));
+
+    openSettingsWindow();
+    if (settingsWindow) {
+        settingsWindow.webContents.once('did-finish-load', () => {
+            settingsWindow.webContents.send('connected-via-link');
+        });
+    }
+    checkForUpdates();
+}
+
+// macOS entrega o link via evento 'open-url' (precisa registrar cedo, antes do 'ready').
+app.on('open-url', (event, url) => {
+    event.preventDefault();
+    if (app.isReady()) {
+        handleDeepLink(url);
+    } else {
+        pendingDeepLink = url;
+    }
+});
+
 // Evita múltiplas instâncias do agente rodando ao mesmo tempo.
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
     app.quit();
 } else {
-    app.on('second-instance', () => {
-        toggleSearchWindow();
+    // Windows/Linux entregam o link como argumento de linha de comando — inclusive
+    // quando o app já está rodando e o clique no link reabre uma "segunda instância".
+    app.on('second-instance', (event, commandLine) => {
+        const linkArg = findDeepLinkArg(commandLine);
+        if (linkArg) {
+            handleDeepLink(linkArg);
+        } else {
+            toggleSearchWindow();
+        }
     });
 }
 
@@ -538,7 +602,13 @@ app.whenReady().then(() => {
 
     app.setLoginItemSettings({ openAtLogin: !!store.get('launchAtStartup') });
 
-    if (!isConfigured()) {
+    // Link de pareamento: já pendente (macOS, evento open-url antes do ready) ou
+    // veio como argumento de linha de comando (Windows/Linux, primeira abertura).
+    const startupLinkArg = pendingDeepLink || findDeepLinkArg(process.argv);
+    if (startupLinkArg) {
+        handleDeepLink(startupLinkArg);
+        pendingDeepLink = null;
+    } else if (!isConfigured()) {
         openSettingsWindow();
     }
 
