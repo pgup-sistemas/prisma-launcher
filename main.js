@@ -454,6 +454,30 @@ const LOCAL_FILES_MAX = 1500;
 const LOCAL_FILES_MAX_DEPTH = 3;
 const LOCAL_FILES_SKIP_DIRS = new Set(['node_modules', '.git', '.cache', '__pycache__']);
 
+// Lê ~/.config/user-dirs.dirs (padrão xdg-user-dirs, presente na maioria das
+// distros Linux) pra pegar os nomes REAIS das pastas — em vez de tentar
+// adivinhar tradução/capitalização (ex.: "Área de Trabalho" vs "Área de
+// trabalho" — Linux é case-sensitive, uma letra errada já quebra a busca).
+function readXdgUserDirs() {
+    const home = os.homedir();
+    const file = path.join(home, '.config', 'user-dirs.dirs');
+    const dirs = {};
+
+    let content;
+    try {
+        content = fs.readFileSync(file, 'utf8');
+    } catch (e) {
+        return dirs;
+    }
+
+    const re = /^XDG_(\w+)_DIR="(.+)"$/gm;
+    let match;
+    while ((match = re.exec(content)) !== null) {
+        dirs[match[1]] = match[2].replace(/^\$HOME/, home);
+    }
+    return dirs;
+}
+
 function candidateFileFolders() {
     const home = os.homedir();
     const platform = process.platform;
@@ -464,11 +488,17 @@ function candidateFileFolders() {
     ];
 
     if (platform === 'linux') {
-        // Distros com locale pt-BR costumam nomear as pastas em português.
+        const xdg = readXdgUserDirs();
+        if (xdg.DOWNLOAD_DIR) candidates.push(xdg.DOWNLOAD_DIR);
+        if (xdg.DOCUMENTS_DIR) candidates.push(xdg.DOCUMENTS_DIR);
+        if (xdg.DESKTOP_DIR) candidates.push(xdg.DESKTOP_DIR);
+
+        // Fallback pros nomes traduzidos mais comuns, caso o xdg-user-dirs
+        // não esteja disponível (ex.: distro sem esse pacote instalado).
         candidates.push(
-            path.join(home, 'Downloads'),
             path.join(home, 'Documentos'),
-            path.join(home, 'Área de Trabalho')
+            path.join(home, 'Área de Trabalho'),
+            path.join(home, 'Área de trabalho')
         );
     }
 

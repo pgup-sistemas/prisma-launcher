@@ -79,7 +79,7 @@
         "AppImage",
         "deb"
       ],
-      "icon": "assets/icon.png",
+      "icon": "assets/icons",
       "category": "Utility",
       "artifactName": "PRISMA-Launcher.${ext}"
     }
