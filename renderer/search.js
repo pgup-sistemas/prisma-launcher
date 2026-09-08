@@ -221,7 +221,11 @@
                     qaLinkBtn.disabled = false;
                     if (!res.ok || !res.data.success) { setFeedback('Não foi possível gerar o QR Code.', true); return; }
                     setFeedback('QR Code gerado.');
-                    qaResult.innerHTML = '<div class="qa-result"><img src="' + res.data.png_base64 + '" alt="QR Code"></div>';
+                    qaResult.innerHTML =
+                        '<div class="qa-result">' +
+                        '<img src="' + res.data.png_base64 + '" alt="QR Code">' +
+                        '<a class="qa-qr-download" id="qaQrDownload" href="' + res.data.png_base64 + '" download="qrcode-prisma.png">Baixar PNG</a>' +
+                        '</div>';
                     resize();
                 })
                 .catch(function () {
